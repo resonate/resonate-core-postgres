@@ -1,0 +1,795 @@
+<!--
+Database build.xml
+
+This build file requires a properties file for the specific database (samples can
+be found in the config directory).
+
+Usage:
+ant -propertyfile config/survey_raw.properties make.full
+-->
+<project>
+    <!-- Load instance properties file -->
+    <property file="config/${build.config}.properties"/>
+
+    <!-- Load global and local properties file -->
+    <property file="config/local.properties"/>
+    <property file="config/global.properties"/>
+
+    <!-- Include Ant Contrib -->
+    <taskdef resource="net/sf/antcontrib/antlib.xml">
+        <classpath>
+            <pathelement location="${ant.contrib}"/>
+        </classpath>
+    </taskdef>
+
+    <!-- Set override to N - must be supplied on the command line to override -->
+    <property name="build.override" value="n"/>
+
+    <!-- If db.instance is not supplied then assume production -->
+    <property name="db.instance" value=""/>
+
+    <!-- If build.deploy is not supplied then assume Y - determines whether a deploy build is needed in the branch -->
+    <property name="build.deploy" value="y"/>
+
+    <!-- If build.seed is not supplied then assume Y -->
+    <property name="build.seed" value="y"/>
+
+    <!-- Turn validation on by default -->
+    <property name="build.validate" value="y"/>
+
+    <!-- If build.branch is not supplied then none -->
+    <property name="build.branch" value=""/>
+
+    <!-- The build branch is always local by default -->
+    <property name="build.branch.remote" value="n"/>
+
+    <!-- Set buildtype to 'full' by default -->
+    <property name="build.type" value="full"/>
+
+    <!-- Validate the release name against the branch name by default -->
+    <property name="build.release.validate" value="y"/>
+
+    <!-- Set build.distribute.source to 'build' by default -->
+    <property name="build.distribute.source" value="build"/>
+
+    <!-- Set build.doc to 'n' by default -->
+    <property name="build.doc" value="n"/>
+
+    <!-- Fail if db.instance or build.copy.source or build.distribute.source contains _restore -->
+    <if> <contains string="${db.instance}" substring="_restore"/> <then>
+        <fail message="${db.instance} appears to be restoring"/>
+    </then> </if>
+
+    <if> <contains string="${build.copy.source}" substring="_restore"/> <then>
+        <fail message="${build.copy.source} appears to be restoring"/>
+    </then> </if>
+
+    <if> <contains string="${build.distribute.source}" substring="_restore"/> <then>
+        <fail message="${build.distribute.source} appears to be restoring"/>
+    </then> </if>
+
+    <!-- If build.commit is not supplied then assume Y unless the instance is "clean" and then set N -->
+    <property name="build.commit" value="y"/>
+    <var name="build.clean" value="n"/>
+
+    <if> <contains string="${db.instance}" substring="clean"/> <then>
+        <var name="build.clean" value="y"/>
+    </then> </if>
+
+    <if> <contains string="${db.instance}" substring="clean_minimal"/> <then>
+        <var name="build.seed" value="n"/>
+    </then> </if>
+
+    <if>
+        <equals arg1="${build.clean}" arg2="y" />
+        <then>
+            <var name="build.quick" value="y"/>
+            <var name="build.commit" value="n"/>
+        </then>
+    </if>
+
+    <!-- If build.test is not supplied then assume Y -->
+    <property name="build.test" value="y"/>
+
+    <!-- If build.debug is not supplied then assume N -->
+    <property name="build.debug" value="n"/>
+
+    <!-- Verbosity is set to default -->
+    <property name="build.verbosity" value="default"/>
+
+    <!-- If build.source is not supplied then assume N -->
+    <property name="build.copy.source" value="clean"/>
+
+    <!-- If build.password is not supplied then assume Y (a password prompt will appear) -->
+    <property name="build.password.prompt" value="y"/>
+
+    <!-- If output.dir is not supplied then assume tmp -->
+    <property name="output.dir" value="tmp"/>
+
+    <!-- Set the tmp file -->
+    <property name="output.file.tmp" value="${output.dir}/tmp.sql"/>
+
+    <!-- If output.dir is not supplied then assume tmp -->
+    <property name="db.path" value="../db/${build.config}"/>
+
+    <!-- Load db properties file -->
+    <property file="${db.path}/build/build.properties"/>
+
+    <property name="output.sql" value="null"/>
+
+    <!-- Determine the database instance -->
+    <if>
+        <equals arg1="${db.instance}" arg2="" />
+        <then>
+            <property name="db.instance_name" value="${db.name}"/>
+            <property name="db.production" value="y"/>
+        </then>
+        <else>
+            <property name="db.instance_name" value="${db.name}_${db.instance}"/>
+            <property name="db.production" value="n"/>
+        </else>
+    </if>
+
+    <!-- Set the doc role and inclusion -->
+    <property name="build.doc.role" value="${db.prefix}_${db.user}"/>
+    <property name="build.doc.include" value="true"/>
+
+    <!-- Set build.test.build to N by default - if set to Y then turn off unit tests and seed data -->
+    <if>
+        <equals arg1="${build.test.build}" arg2="y" />
+        <then>
+            <var name="build.test" value="n"/>
+            <var name="build.seed" value="n"/>
+        </then>
+        <else>
+            <var name="build.test.build" value="n"/>
+        </else>
+    </if>
+
+    <!-- Call build-script.xml -->
+    <target name="make.script">
+        <ant antfile="build-script.xml" inheritAll="false" target="${script.target}">
+            <property name="output.file.tmp" value="${output.file.tmp}"/>
+            <property name="db.path" value="${db.path}"/>
+            <property name="db.instance_name" value="${db.instance_name}"/>
+            <property name="db.instance" value="${db.instance}"/>
+            <property name="db.production" value="${db.production}"/>
+            <property name="build.seed" value="${build.seed}"/>
+            <property name="build.test" value="${build.test}"/>
+            <property name="build.test.build" value="${build.test.build}"/>
+            <property name="build.debug" value="${build.debug}"/>
+            <property name="build.validate" value="${build.validate}"/>
+            <property name="build.commit" value="${build.commit}"/>
+            <property name="build.clean" value="${build.clean}"/>
+            <property name="build.doc" value="${build.doc}"/>
+            <property name="build.branch" value="${build.branch}"/>
+            <property name="build.config" value="${build.config}"/>
+        </ant>
+    </target>
+
+    <!-- Replace variables in a script -->
+    <target name="script.replace">
+        <replace file="${output.file}" token="@db.user@" value="${db.prefix}_${db.user}"/>
+        <replace file="${output.file}" token="@db.instance_name@" value="${db.instance_name}"/>
+        <replace file="${output.file}" token="@db.instance_name.clean@" value="${db.name}_${build.copy.source}"/>
+        <replace file="${output.file}" token="@db.instance_name.source@" value="${db.name}_${build.rename.source}"/>
+        <replace file="${output.file}" token="@db.tablespace.default@" value="${db.tablespace.default}"/>
+        <replace file="${output.file}" token="@db.validation.schema.exclusion@" value="${db.validation.schema.exclusion}"/>
+        <replace file="${output.file}" token="@build.autocommit@" value="${build.autocommit}"/>
+        <replace file="${output.file}" token="@build.quick@" value="${build.quick}"/>
+        <replace file="${output.file}" token="@build.debug@" value="${build.debug}"/>
+        <replace file="${output.file}" token="@build.verbosity@" value="${build.verbosity}"/>
+        <replace file="${output.file}" token="@build.type@" value="${build.type}"/>
+        <replace file="${output.file}" token="@build.update@" value="${build.update}"/>
+        <replace file="${output.file}" token="@build.doc.role@" value="${build.doc.role}"/>
+        <replace file="${output.file}" token="@build.doc.include@" value="${build.doc.include}"/>
+        <replace file="${output.file}" token="@release@" value="${release}"/>
+        <replace file="${output.file}" token="@release.update@" value="${release.update}"/>
+    </target>
+
+    <!-- Make the script for a full build -->
+    <target name="make.full">
+        <echo level="info">Making create script using config: ${db.path}/build/build.properties</echo>
+
+        <!-- Validate the release name against the build name -->
+        <if> <equals arg1="${build.release.validate}" arg2="y"/> <then>
+            <!-- Get the name of the current branch -->
+            <exec executable="git" dir=".." failonerror="yes">
+                <arg value="rev-parse"/>
+                <arg value="--abbrev-ref"/>
+                <arg value="HEAD"/>
+                <redirector outputproperty="build.git.branch"/>
+            </exec>
+
+            <!-- Is this a release branch? -->
+            <if> <contains string="${build.git.branch}" substring="release_"/> <then>
+                <!-- Make sure the release matches the branch name -->
+                <if> <not> <equals arg1="${build.git.branch}" arg2="release_${release}"/> </not> <then>
+                    <fail>Release name "${release}" does not match branch name "${build.git.branch}"</fail>
+                </then> </if>
+            </then> </if>
+        </then> </if>
+
+        <var name="build.autocommit" value="off"/>
+        <var name="output.file" value="${output.dir}/${db.instance_name}_build.sql"/>
+
+        <var name="script.target" value="make.full"/>
+        <antcall target="make.script"/>
+
+        <var name="build.type" value="full"/>
+        <antcall target="script.replace"/>
+    </target>
+
+    <!-- Make the script for an update -->
+    <target name="make.update" depends="input.password">
+        <if>
+            <equals arg1="${build.deploy}" arg2="y"/>
+            <then>
+                <!-- If building off a branch then pull the branch -->
+                <if>
+                    <not><equals arg1="${build.branch}" arg2=""/></not>
+                    <then>
+                        <echo level="info">Retrieving branch: release_${build.branch}</echo>
+
+                        <!-- By default build branches are pulled locally, but pull remotely on request -->
+                        <var name="build.branch.remote.param" value=""/>
+
+                        <if>
+                            <equals arg1="${build.branch.remote}" arg2="y"/>
+                            <then>
+                                <var name="build.branch.remote.param" value="--remote=${build.repository.url}"/>
+                            </then>
+                        </if>
+
+                        <!-- Create the output dir if needed and delete any existing branch files -->
+                        <mkdir dir="${output.dir}"/>
+                        <delete file="${output.dir}/${db.instance_name}_${build.branch}.zip"/>
+                        <delete dir="${output.dir}/${db.instance_name}_${build.branch}"/>
+
+                        <!-- Export the branch -->
+                        <exec executable="git" dir=".." failonerror="yes">
+                            <arg value="archive"/>
+                            <arg value="${build.branch.remote.param}"/>
+                            <arg value="--format=zip"/>
+                            <arg value="-0"/>
+                            <arg value="--prefix=${db.instance_name}_${build.branch}/"/>
+                            <arg value="-o"/>
+                            <arg value="build/${output.dir}/${db.instance_name}_${build.branch}.zip"/>
+                            <arg value="release_${build.branch}"/>
+                            <arg value="db"/>
+                            <arg value="schema"/>
+                        </exec>
+
+                        <!-- Unzip the branch and delete the zip file -->
+                        <unzip src="${output.dir}/${db.instance_name}_${build.branch}.zip" dest="${output.dir}"/>
+                        <delete file="${output.dir}/${db.instance_name}_${build.branch}.zip"/>
+                    </then>
+                </if>
+
+                <!-- Perform a full build if validation is turned on -->
+                <if>
+                    <equals arg1="${build.validate}" arg2="y"/>
+                    <then>
+                        <var name="db.instance_temp" value="${db.instance}"/>
+                        <var name="db.instance" value="temp_${build.user}"/>
+
+                        <if>
+                            <equals arg1="${db.instance}" arg2="" />
+                            <then>
+                                <var name="db.instance_name" value="${db.name}"/>
+                            </then>
+                            <else>
+                                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+                            </else>
+                        </if>
+
+                        <var name="output.update" value="${output.dir}/${db.instance_name}_update_info.sql"/>
+
+                        <var name="build.update" value="y"/>
+                        <antcall target="execute.rebuild"/>
+                        <antcall target="execute.drop"/>
+
+                        <var name="db.instance" value="${db.instance_temp}"/>
+
+                        <if>
+                            <equals arg1="${db.instance}" arg2="" />
+                            <then>
+                                <var name="db.instance_name" value="${db.name}"/>
+                            </then>
+                            <else>
+                                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+                            </else>
+                        </if>
+                    </then>
+                </if>
+
+                <!-- Create the update build -->
+                <echo level="info">Making update script using config: ${db.path}/build/build.properties</echo>
+
+                <var name="build.autocommit" value="off"/>
+                <var name="output.file" value="${output.dir}/${db.instance_name}_update.sql"/>
+
+                <var name="build.type" value="update"/>
+
+                <ant antfile="build-script.xml" inheritAll="false" target="make.update">
+                    <property name="output.file.tmp" value="${output.file.tmp}"/>
+                    <property name="db.path" value="${db.path}"/>
+                    <property name="db.user" value="${db.user}"/>
+                    <property name="db.instance" value="${db.instance}"/>
+                    <property name="db.instance_name" value="${db.instance_name}"/>
+                    <property name="db.production" value="${db.production}"/>
+                    <property name="build.seed" value="${build.seed}"/>
+                    <property name="build.test" value="n"/>
+                    <property name="build.debug" value="${build.debug}"/>
+                    <property name="build.commit" value="${build.commit}"/>
+                    <property name="build.validate" value="${build.validate}"/>
+                </ant>
+
+                <antcall target="script.replace"/>
+
+                <var name="build.type" value="full"/>
+
+                <delete>
+                    <fileset dir="${output.dir}" includes="${db.name}_temp*.sql"/>
+                </delete>
+            </then>
+        </if>
+    </target>
+
+    <!-- Make the script for an update -->
+    <target name="make.doc" depends="input.password">
+        <var name="db.instance_temp" value="${db.instance}"/>
+        <var name="db.instance" value="temp_${build.user}"/>
+
+        <if>
+            <equals arg1="${db.instance}" arg2="" />
+            <then>
+                <var name="db.instance_name" value="${db.name}"/>
+            </then>
+            <else>
+                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+            </else>
+        </if>
+
+        <var name="store.build.doc" value="${build.doc}"/>
+        <var name="build.doc" value="y"/>
+        <var name="build.seed" value="n"/>
+        <var name="output.sql" value="../db/${db.name}/doc/dd.wiki"/>
+
+        <antcall target="execute.rebuild"/>
+
+        <var name="output.sql" value="null"/>
+        <var name="build.seed" value="y"/>
+        <var name="build.doc" value="${store.build.doc}"/>
+
+        <antcall target="execute.drop"/>
+
+        <var name="db.instance" value="${db.instance_temp}"/>
+
+        <if>
+            <equals arg1="${db.instance}" arg2="" />
+            <then>
+                <var name="db.instance_name" value="${db.name}"/>
+            </then>
+            <else>
+                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+            </else>
+        </if>
+
+        <delete>
+            <fileset dir="${output.dir}" includes="${db.name}_temp*.sql"/>
+        </delete>
+    </target>
+
+    <!-- Make the database drop script -->
+    <target name="make.drop">
+        <echo level="info">Making drop database script using config: ${db.path}/build/build.properties</echo>
+
+        <var name="build.autocommit" value="on"/>
+        <var name="output.file" value="${output.dir}/${db.instance_name}_drop.sql"/>
+
+        <concat dest="${output.file}" fixlastline="yes">
+            <fileset dir="script" includes="pre.sql"/>
+        </concat>
+
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="disconnect.sql"/>
+        </concat>
+
+        <concat dest="${output.file}" append="yes">
+            <fileset dir="script" includes="drop.sql"/>
+        </concat>
+
+        <var name="build.type" value="drop"/>
+        <antcall target="script.replace"/>
+    </target>
+
+    <!-- Make the database create script -->
+    <target name="make.create">
+        <echo level="info">Making create database script using config: ${db.path}/build/build.properties</echo>
+
+        <var name="build.type" value="create"/>
+
+        <var name="build.autocommit" value="on"/>
+        <var name="output.file" value="${output.dir}/${db.instance_name}_create.sql"/>
+
+        <concat dest="${output.file}" fixlastline="yes">
+            <fileset dir="script" includes="pre.sql"/>
+        </concat>
+
+        <concat dest="${output.file}" append="yes">
+            <fileset dir="script" includes="create.sql"/>
+        </concat>
+
+        <var name="build.type" value="create"/>
+        <antcall target="script.replace"/>
+    </target>
+
+    <!-- Make the database copy script -->
+    <target name="make.copy">
+        <echo level="info">Making copy database script using config: ${db.path}/build/build.properties</echo>
+
+        <var name="build.autocommit" value="on"/>
+        <var name="output.file" value="${output.dir}/${db.instance_name}_copy.sql"/>
+
+        <concat dest="${output.file}" fixlastline="yes">
+            <fileset dir="script" includes="pre.sql"/>
+        </concat>
+
+        <concat dest="${output.file}" append="yes">
+            <fileset dir="script" includes="copy.sql"/>
+        </concat>
+
+        <var name="build.type" value="copy"/>
+        <antcall target="script.replace"/>
+    </target>
+
+    <!-- Make the database rename script -->
+    <target name="make.rename">
+        <echo level="info">Making rename database script using config: ${db.path}/build/build.properties</echo>
+
+        <var name="build.autocommit" value="on"/>
+        <var name="output.file" value="${output.dir}/${db.instance_name}_rename.sql"/>
+
+        <concat dest="${output.file}" fixlastline="yes">
+            <fileset dir="script" includes="pre.sql"/>
+        </concat>
+
+        <concat dest="${output.file}" append="yes">
+            <fileset dir="script" includes="rename.sql"/>
+        </concat>
+
+        <var name="build.type" value="rename"/>
+        <antcall target="script.replace"/>
+    </target>
+
+    <!-- Make deploy files -->
+    <target name='make.deploy' depends="input.password">
+        <if>
+            <equals arg1="${build.deploy}" arg2="n"/>
+            <then>
+                <echo level="info">No deploy is required for the ${build.config} database in this branch</echo>
+            </then>
+            <else>
+                <var name="output.dir" value="../deploy"/>
+                <var name="db.instance" value=""/>
+                <var name="db.production" value="y"/>
+                <var name="db.instance_name" value="${db.name}"/>
+                <var name="build.debug" value="n"/>
+                <var name="build.quick" value="n"/>
+                <var name="build.seed" value="y"/>
+                <var name="build.commit" value="y"/>
+                <var name="build.validate" value="y"/>
+                <var name="build.verbosity" value="terse"/>
+
+                <if>
+                    <!-- If there is no update release, create a full build -->
+                    <equals arg1="${release.update}" arg2=""/>
+                    <then>
+                        <antcall target="make.create"/>
+                        <antcall target="make.full"/>
+                    </then>
+                    <!-- else create an update build -->
+                    <else>
+                        <property name="db.instance_name" value="${db.name}_${db.instance}"/>
+                        <antcall target="make.update"/>
+                    </else>
+                </if>
+
+                <antcall target="make.doc"/>
+            </else>
+        </if>
+    </target>
+
+    <!-- Input PSQL password -->
+    <target name="input.password">
+        <!-- Did the user request a password prompt? -->
+        <if>
+            <equals arg1="${build.password.prompt}" arg2="y"/>
+            <then>
+                <!-- Get the password if this is the first run of PSQL -->
+                <input message="Enter password for ${build.user}: " addproperty="build.password">
+                    <handler classname="org.apache.tools.ant.input.SecureInputHandler"/>
+                </input>
+            </then>
+        </if>
+    </target>
+
+    <!-- Execute a psql script -->
+    <target name="execute.psql">
+        <if>
+            <equals arg1="${output.sql}" arg2="null"/>
+            <then>
+                <echo level="info">Executing PSQL on ${build.user}@${build.server}:${build.db} - ${output.file}</echo>
+
+                <if>
+                    <equals arg1="${build.password.prompt}" arg2="y"/>
+                    <then>
+                        <exec executable="${build.psql}" failonerror="yes">
+                            <arg value="-h"/>
+                            <arg value="${build.server}"/>
+                            <arg value="-w"/>
+                            <arg value="-X"/>
+                            <arg value="-U"/>
+                            <arg value="${build.user}"/>
+                            <arg value="-f"/>
+                            <arg value="${user.dir}/${output.file}"/>
+                            <arg value="postgres"/>
+                            <env key="PGPASSWORD" value="${build.password}"/>
+                        </exec>
+                    </then>
+                    <else>
+                        <exec executable="${build.psql}" failonerror="yes">
+                            <arg value="-h"/>
+                            <arg value="${build.server}"/>
+                            <arg value="-w"/>
+                            <arg value="-X"/>
+                            <arg value="-U"/>
+                            <arg value="${build.user}"/>
+                            <arg value="-f"/>
+                            <arg value="${user.dir}/${output.file}"/>
+                            <arg value="postgres"/>
+                        </exec>
+                    </else>
+                </if>
+            </then>
+            <else>
+                <echo level="info">Executing PSQL on ${build.user}@${build.server}:${build.db} - ${output.file} > ${output.sql}</echo>
+
+                <if>
+                    <equals arg1="${build.password.prompt}" arg2="y"/>
+                    <then>
+                        <exec executable="${build.psql}" output="${output.sql}" logError="yes" failonerror="yes">
+                            <arg value="-h"/>
+                            <arg value="${build.server}"/>
+                            <arg value="-w"/>
+                            <arg value="-X"/>
+                            <arg value="-U"/>
+                            <arg value="${build.user}"/>
+                            <arg value="-f"/>
+                            <arg value="${user.dir}/${output.file}"/>
+                            <arg value="postgres"/>
+                            <env key="PGPASSWORD" value="${build.password}"/>
+                        </exec>
+                    </then>
+                    <else>
+                        <exec executable="${build.psql}" output="${output.sql}" logError="yes" failonerror="yes">
+                            <arg value="-h"/>
+                            <arg value="${build.server}"/>
+                            <arg value="-w"/>
+                            <arg value="-X"/>
+                            <arg value="-U"/>
+                            <arg value="${build.user}"/>
+                            <arg value="-f"/>
+                            <arg value="${user.dir}/${output.file}"/>
+                            <arg value="postgres"/>
+                        </exec>
+                    </else>
+                </if>
+            </else>
+        </if>
+    </target>
+
+    <!-- Stops operations on a production instance unless override is specified -->
+    <target name="check.instance">
+        <echo level="info">Checking for override if a production instance is specified</echo>
+
+        <if>
+            <equals arg1="${db.instance}" arg2="" />
+            <then>
+                <if>
+                    <equals arg1="${build.override}" arg2="n" />
+                    <then>
+                        <fail>Operation requires override on production instance</fail>
+                    </then>
+                </if>
+            </then>
+        </if>
+    </target>
+
+    <!-- Execute the database drop script -->
+    <target name="execute.drop" depends="check.instance,input.password,make.drop">
+        <echo level="info">Dropping database ${db.instance_name} using config: ${db.path}/build/build.properties</echo>
+        <var name="build.db" value="postgres"/>
+
+        <antcall target="execute.psql"/>
+    </target>
+
+    <!-- Execute the database create script -->
+    <target name="execute.create" depends="input.password,make.create">
+        <echo level="info">Creating database ${db.instance_name} using config: ${db.path}/build/build.properties</echo>
+        <var name="build.db" value="postgres"/>
+
+        <antcall target="execute.psql"/>
+    </target>
+
+    <!-- Execute the database drop and create script -->
+    <target name="execute.recreate" depends="check.instance,input.password,execute.drop,execute.create"/>
+
+    <!-- Execute the database full script -->
+    <target name="execute.full" depends="check.instance,input.password,make.full">
+        <echo level="info">Building database ${db.instance_name} using config: ${db.path}/build/build.properties</echo>
+        <var name="build.db" value="${db.instance_name}"/>
+
+        <if>
+            <equals arg1="${build.update}" arg2="y" />
+            <then>
+                <var name="output.sql" value="${output.update}"/>
+            </then>
+        </if>
+
+        <antcall target="execute.psql"/>
+
+        <if>
+            <equals arg1="${build.update}" arg2="y" />
+            <then>
+                <var name="output.sql" value="null"/>
+            </then>
+        </if>
+    </target>
+
+    <!-- Execute the database update script -->
+    <target name="execute.update" depends="check.instance,input.password,make.update">
+        <if>
+            <equals arg1="${build.deploy}" arg2="n"/>
+            <then>
+                <echo level="info">No update is required for the ${build.config} database in this branch</echo>
+            </then>
+            <else>
+                <echo level="info">Building database ${db.instance_name} using config: ${db.path}/build/build.properties</echo>
+                <var name="build.db" value="${db.instance_name}"/>
+
+                <antcall target="execute.psql"/>
+            </else>
+        </if>
+    </target>
+
+    <!-- Execute the database update script -->
+    <target name="execute.build" depends="input.password,execute.create,execute.full"/>
+
+    <!-- Execute the database update script -->
+    <target name="execute.rebuild" depends="check.instance,input.password,execute.drop,execute.create,execute.full"/>
+
+    <!-- Copy a database -->
+    <target name="execute.copy" depends="check.instance,input.password,execute.drop,make.copy">
+        <echo level="info">Copying database ${db.instance_name} from template using config: ${db.path}/build/build.properties</echo>
+        <antcall target="execute.psql"/>
+    </target>
+
+    <!-- Rename a database -->
+    <target name="execute.rename" depends="check.instance,input.password,make.rename">
+        <echo level="info">Renaming database ${db.instance_name} from template using config: ${db.path}/build/build.properties</echo>
+        <antcall target="execute.psql"/>
+    </target>
+
+    <!-- Copy and update a database -->
+    <target name="execute.copy.update" depends="check.instance,input.password,execute.drop,execute.copy,execute.update"/>
+
+    <!-- Copy databases for distribution -->
+    <target name="execute.distribute.copy" depends="input.password">
+        <echo level="info">Copying ${db.name}_${build.distribute.instance} databases for distribution using config: ${db.path}/build/build.properties</echo>
+
+        <var name="build.copy.source" value="${build.distribute.source}"/>
+
+        <var name="db.instance" value="build_copy_${build.distribute.instance}"/>
+        <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+        <antcall target="execute.copy"/>
+
+        <if>
+            <equals arg1="${build.distribute.test}" arg2="y" />
+            <then>
+                <var name="db.instance" value="build_copy_${build.distribute.instance}_test"/>
+                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+                <antcall target="execute.copy"/>
+            </then>
+        </if>
+    </target>
+
+    <!-- Distribute databases -->
+    <target name="execute.distribute" depends="input.password">
+        <echo level="info">Distributing ${db.name}_${build.distribute.instance} databases using config: ${db.path}/build/build.properties</echo>
+
+        <!-- Drop the prior DBs -->
+        <var name="db.instance" value="${build.distribute.instance}_old"/>
+        <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+        <antcall target="execute.drop"/>
+
+        <var name="db.instance" value="${build.distribute.instance}_test_old"/>
+        <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+        <antcall target="execute.drop"/>
+
+        <!-- Preserve the current DBs -->
+        <var name="build.rename.source" value="${build.distribute.instance}"/>
+        <var name="db.instance" value="${build.distribute.instance}_old"/>
+        <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+        <antcall target="execute.rename"/>
+
+        <if>
+            <equals arg1="${build.distribute.test}" arg2="y" />
+            <then>
+                <var name="build.rename.source" value="${build.distribute.instance}_test"/>
+                <var name="db.instance" value="${build.distribute.instance}_test_old"/>
+                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+                <antcall target="execute.rename"/>
+            </then>
+        </if>
+
+        <!-- Rename the copies -->
+        <var name="build.rename.source" value="build_copy_${build.distribute.instance}"/>
+        <var name="db.instance" value="${build.distribute.instance}"/>
+        <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+        <antcall target="execute.rename"/>
+
+        <if>
+            <equals arg1="${build.distribute.test}" arg2="y" />
+            <then>
+                <var name="build.rename.source" value="build_copy_${build.distribute.instance}_test"/>
+                <var name="db.instance" value="${build.distribute.instance}_test"/>
+                <var name="db.instance_name" value="${db.name}_${db.instance}"/>
+                <antcall target="execute.rename"/>
+            </then>
+        </if>
+    </target>
+
+    <!-- Copy QA databases -->
+    <target name="execute.distribute.copy.qa" depends="input.password">
+        <var name="build.distribute.instance" value="qa"/>
+        <var name="build.distribute.test" value="n"/>
+        <antcall target="execute.distribute.copy"/>
+    </target>
+
+    <!-- Distribute QA databases -->
+    <target name="execute.distribute.qa" depends="input.password">
+        <var name="build.distribute.instance" value="qa"/>
+        <var name="build.distribute.test" value="n"/>
+        <antcall target="execute.distribute"/>
+    </target>
+
+    <!-- Copy DEV databases -->
+    <target name="execute.distribute.copy.dev" depends="input.password">
+        <var name="build.distribute.instance" value="dev"/>
+        <var name="build.distribute.test" value="y"/>
+        <antcall target="execute.distribute.copy"/>
+    </target>
+
+    <!-- Distribute DEV databases -->
+    <target name="execute.distribute.dev" depends="input.password">
+        <var name="build.distribute.instance" value="dev"/>
+        <var name="build.distribute.test" value="y"/>
+        <antcall target="execute.distribute"/>
+    </target>
+
+    <!-- Copy RC databases -->
+    <target name="execute.distribute.copy.rc" depends="input.password">
+        <var name="build.distribute.instance" value="rc"/>
+        <var name="build.distribute.test" value="n"/>
+        <antcall target="execute.distribute.copy"/>
+    </target>
+
+    <!-- Distribute RC databases -->
+    <target name="execute.distribute.rc" depends="input.password">
+        <var name="build.distribute.instance" value="rc"/>
+        <var name="build.distribute.test" value="n"/>
+        <antcall target="execute.distribute"/>
+    </target>
+</project>

@@ -1,0 +1,343 @@
+<project>
+    <taskdef resource="net/sf/antcontrib/antcontrib.properties">
+        <classpath>
+            <pathelement location="../lib/ant-contrib/ant-contrib-1.0b3.jar"/>
+        </classpath>
+    </taskdef>
+
+    <property file="${schema.path}/build/build.properties"/>
+    <property name="schema.file.seed" value=""/>
+    <property name="schema.file.test" value=""/>
+    <property name="schema.file.test.init" value=""/>
+    <property name="schema.file.update" value=""/>
+    <property name="schema.file.update.seed" value=""/>
+
+    <target name="script.reset">
+        <echo level="info">Looking for file reset at: script/reset.sql</echo>
+        
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="reset.sql"/>
+        </concat>
+    </target>
+
+    <target name="script.pre" depends="script.reset">
+        <echo level="info">Looking for file pre at: ${schema.path}/build/pre.sql</echo>
+
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset file="${schema.path}/build/pre.sql"/>
+        </concat>
+    </target>
+
+    <target name="script.build.out">
+        <basename property="script.file.strip" file="${script.file}"/>
+        <echo level="info">Including build script: ${schema.path}/build/${script.file.strip}</echo>
+        <concat destfile="${output.file.tmp}" fixlastline="yes" append="yes">\i ${schema.path}/build/${script.file.strip}${line.separator}</concat>
+    </target>
+
+    <target name="script.out">
+        <echo level="info">Including db script: ${schema.path}/${script.file}</echo>
+        <concat destfile="${output.file.tmp}" fixlastline="yes" append="yes">\i ${schema.path}/${script.file}${line.separator}</concat>
+    </target>
+    
+    <target name="make.full" depends="script.pre">
+        <echo level="info">Building schema(s) at: ${schema.path}</echo>
+
+        <echo level="debug">Script files: ${schema.file.script}</echo>
+
+        <if>
+            <equals arg1="${build.debug}" arg2="y" />
+            <then>
+                <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">/***********************************************************************************************************************************
+${schema.path} Build Scripts
+***********************************************************************************************************************************/
+</concat>
+                
+                <foreach list="${schema.file.script}" param="script.file" delimiter=" " target="script.out"/>
+                
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset file="${output.file.tmp}"/>
+                </concat>
+            </then>
+            <else>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <filelist dir="${schema.path}" files="${schema.file.script}"/>
+                </concat>
+            </else>
+        </if>
+
+        <antcall target="script.post"/>
+
+        <if> <equals arg1="${db.production}" arg2="n" /> <then>
+            <concat dest="${output.file}" fixlastline="yes" append="yes">
+                <fileset file="${schema.path}/build/development_full.sql"/>
+            </concat>
+        </then> </if>
+        
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset file="script/tablespace.sql"/>
+        </concat>
+        
+        <if>
+            <equals arg1="${build.test}" arg2="y" />
+            <then>
+                <echo level="debug">Test files: ${schema.file.test.init} ${schema.file.test}</echo>
+                              
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="test-begin.sql"/>
+                </concat>
+                
+                <if>
+                    <equals arg1="${build.debug}" arg2="y" />
+                    <then>
+                        <delete file="${output.file.tmp}"/>
+
+                        <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Unit Init Test Scripts
+***********************************************************************************************************************************/
+</concat>
+                        
+                        <foreach list="${schema.file.test.init}" param="script.file" delimiter=" " target="script.out"/>
+                        
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <fileset file="${output.file.tmp}"/>
+                        </concat>
+                        
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <fileset dir="script" includes="test-init-end.sql"/>
+                        </concat>
+
+                        <delete file="${output.file.tmp}"/>
+                        
+                        <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Unit Test Scripts
+***********************************************************************************************************************************/
+</concat>
+
+                        <foreach list="${schema.file.test}" param="script.file" delimiter=" " target="script.out"/>
+                        
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <fileset file="${output.file.tmp}"/>
+                        </concat>
+                    </then>
+                    <else>
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <filelist dir="${schema.path}" files="${schema.file.test.init}"/>
+                        </concat>
+                        
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <fileset dir="script" includes="test-init-end.sql"/>
+                        </concat>
+                        
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <filelist dir="${schema.path}" files="${schema.file.test}"/>
+                        </concat>
+                    </else>
+                </if>
+
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="test-end.sql"/>
+                </concat>
+            </then>
+            <else>
+                <if>
+                    <equals arg1="${build.test.build}" arg2="y" />
+                    <then>
+                        <echo level="debug">Test Init files: ${schema.file.test.init}</echo>
+                        <if>
+                            <equals arg1="${build.debug}" arg2="y" />
+                            <then>
+                                <delete file="${output.file.tmp}"/>
+
+                                        <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Unit Test Init Scripts
+***********************************************************************************************************************************/
+</concat>
+                                
+                                <foreach list="${schema.file.test.init}" param="script.file" delimiter=" " target="script.out"/>
+                                
+                                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                                    <fileset file="${output.file.tmp}"/>
+                                </concat>
+                            </then>
+                            <else>
+                                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                                    <filelist dir="${schema.path}" files="${schema.file.test.init}"/>
+                                </concat>
+                            </else>
+                        </if>
+                    </then>
+                </if>
+            </else>
+        </if>
+        
+        <if>
+            <equals arg1="${build.update}" arg2="y" />
+            <then>
+            </then>
+            <else>
+                <if>
+                    <equals arg1="${build.seed}" arg2="n" />
+                    <then>
+                    </then>
+                    <else>
+
+                        <echo level="debug">Seed files: ${schema.file.seed}</echo>
+                        
+                        <if>
+                            <equals arg1="${build.debug}" arg2="y" />
+                            <then>
+                                <delete file="${output.file.tmp}"/>
+
+                                <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Seed Scripts
+***********************************************************************************************************************************/
+</concat>
+                                
+                                <foreach list="${schema.file.seed}" param="script.file" delimiter=" " target="script.out"/>
+                                
+                                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                                    <fileset file="${output.file.tmp}"/>
+                                </concat>
+                            </then>
+                            <else>
+                                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                                    <filelist dir="${schema.path}" files="${schema.file.seed}"/>
+                                </concat>
+                            </else>
+                        </if>
+                    </else>
+                </if>
+            </else>
+        </if>
+                
+        <antcall target="script.exception"/>
+    </target>
+
+    <target name="make.update" depends="script.reset">
+        <echo level="info">Update schema(s) at: ${schema.path}</echo>
+
+        <echo level="debug">Script files: ${schema.file.update}</echo>
+
+        <if> <equals arg1="${db.production}" arg2="n" /> <then>
+            <concat dest="${output.file}" fixlastline="yes" append="yes">
+                <fileset file="${schema.path}/build/development_update.sql"/>
+            </concat>
+        </then> </if>
+        
+        <if>
+            <equals arg1="${build.debug}" arg2="y" />
+            <then>
+                <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Update Scripts
+***********************************************************************************************************************************/
+</concat>
+               
+                <foreach list="${schema.file.update}" param="script.file" delimiter=" " target="script.out"/>
+                
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset file="${output.file.tmp}"/>
+                </concat>
+
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset file="script/tablespace.sql"/>
+                </concat>
+                
+                <if>
+                    <equals arg1="${build.seed}" arg2="n" />
+                    <then>
+                    </then>
+                    <else>
+                <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Seed Scripts
+***********************************************************************************************************************************/
+</concat>
+
+                        <foreach list="${schema.file.update.seed}" param="script.file" delimiter=" " target="script.out"/>
+                        
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <fileset file="${output.file.tmp}"/>
+                        </concat>
+                    </else>
+                </if>
+            </then>
+            <else>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <filelist dir="${schema.path}" files="${schema.file.update}"/>
+                </concat>
+
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset file="script/tablespace.sql"/>
+                </concat>
+                
+                <if>
+                    <equals arg1="${build.seed}" arg2="n" />
+                    <then>
+                    </then>
+                    <else>
+                        <concat dest="${output.file}" fixlastline="yes" append="yes">
+                            <filelist dir="${schema.path}" files="${schema.file.update.seed}"/>
+                        </concat>
+                    </else>
+                </if>
+            </else>
+        </if>
+    </target>
+
+    <target name="script.exception">
+        <echo level="debug">Looking for exception file at: ${schema.path}/build/script/exception.sql</echo>
+
+        <if>
+            <equals arg1="${build.validate}" arg2="y" />
+            <then>
+                <if>
+                    <equals arg1="${schema.branch}" arg2="n" />
+                    <then>
+                        <if>
+                            <equals arg1="${build.debug}" arg2="y" />
+                            <then>
+                                <delete file="${output.file.tmp}"/>
+                                
+                                <concat destfile="${output.file.tmp}" overwrite="yes" fixlastline="yes">
+/***********************************************************************************************************************************
+${schema.path} Exception Script
+***********************************************************************************************************************************/
+</concat>
+
+                                <foreach param="script.file" target="script.build.out">
+                                    <path>
+                                        <fileset dir="${schema.path}/build" includes="exception.sql"/>
+                                    </path>
+                                </foreach>
+                                
+                                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                                    <fileset file="${output.file.tmp}"/>
+                                </concat>
+                            </then>
+                            <else>
+                                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                                    <fileset file="${schema.path}/build/exception.sql"/>
+                                </concat>
+                            </else>
+                        </if>
+                    </then>
+                </if>
+            </then>
+        </if>
+    </target>
+    
+    <target name="script.post">
+        <echo level="debug">Looking for post file at: ${schema.path}/build/script/post.sql</echo>
+        
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset file="${schema.path}/build/post.sql"/>
+        </concat>
+        
+        <delete file="${output.file.tmp}"/>
+    </target>    
+</project>

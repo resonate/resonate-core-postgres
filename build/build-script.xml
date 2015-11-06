@@ -1,0 +1,355 @@
+<project>
+    <taskdef resource="net/sf/antcontrib/antcontrib.properties">
+        <classpath>
+            <pathelement location="../lib/ant-contrib/ant-contrib-1.0b3.jar"/>
+        </classpath>
+    </taskdef>
+
+    <property file="config/${build.config}.properties"/>
+    <property file="${db.path}/build/build.properties"/>
+    <property file="config/global.properties"/>
+
+    <target name="clean">
+        <delete file="${output.file}"/>
+    </target>
+    
+    <!-- Call build-script-schema.xml -->
+    <target name="make.script">
+        <ant antfile="build-script-schema.xml" inheritAll="false" target="${script.target}">
+            <property name="db.production" value="${db.production}"/>
+            <property name="output.file.tmp" value="${output.file.tmp}"/>
+            <property name="output.file" value="${output.file}"/>
+            <property name="schema.path" value="${schema.path}"/>
+            <property name="build.test" value="${build.test}"/>
+            <property name="build.test.build" value="${build.test.build}"/>
+            <property name="build.seed" value="${build.seed}"/>
+            <property name="build.debug" value="${build.debug}"/>
+            <property name="build.validate" value="${build.validate}"/>
+            <property name="schema.branch" value="${schema.branch}"/>
+        </ant>
+    </target>
+
+    <target name="script.pre" depends="clean">
+        <echo level="info">Looking for file pre at: script/pre.sql</echo>
+
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="pre.sql"/>
+        </concat>
+
+        <if>
+            <equals arg1="${build.debug}" arg2="n" />
+            <then>
+                <echo level="info">Looking for file disconnect at: script/disconnect.sql</echo>
+                
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="disconnect.sql"/>
+                </concat>
+            </then>
+        </if>
+
+        <echo level="info">Looking for file pre at: script/init.sql</echo>
+        
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="init.sql"/>
+        </concat>
+    </target>
+    
+    <target name="script.clean" depends="script.pre">
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="clean.sql"/>
+        </concat>
+    </target>
+    
+    <target name="script.build-schema" depends="script.pre">
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="reset.sql"/>
+            <fileset dir="script" includes="build-schema.sql"/>
+        </concat>
+
+        <if>
+            <equals arg1="${build.test}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="test-schema.sql"/>
+                </concat>
+            </then>
+        </if>
+
+        <if>
+            <equals arg1="${build.test.build}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="test-schema.sql"/>
+                </concat>
+            </then>
+        </if>
+        
+<!--        <if>
+            <equals arg1="${build.update}" arg2="y" />
+            <then> -->
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="build-schema-info.sql"/>
+                </concat>
+<!--            </then>
+        </if> -->
+    </target>
+
+    <target name="script.utility" depends="script.build-schema">
+        <if>
+            <equals arg1="${db.module.utility}" arg2="y" />
+            <then>
+                <echo level="info">Building utility library</echo>
+
+                <var name="script.target" value="make.full"/>
+                <var name="schema.branch" value="n"/>
+                <var name="schema.path" value="../schema/utility"/>
+                <antcall target="make.script"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="script.scd" depends="script.utility">
+        <if>
+            <equals arg1="${db.module.scd}" arg2="y" />
+            <then>
+                <echo level="info">Building scd library</echo>
+
+                <var name="script.target" value="make.full"/>
+                <var name="schema.branch" value="n"/>
+                <var name="schema.path" value="../schema/scd"/>
+                <antcall target="make.script"/>
+
+                <replace file="${output.file}" token="@schema.scd.sequence.min@" value="${schema.scd.sequence.min}"/>
+                <replace file="${output.file}" token="@schema.scd.sequence.max@" value="${schema.scd.sequence.max}"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="script.partition" depends="script.scd">
+        <if>
+            <equals arg1="${db.module.partition}" arg2="y" />
+            <then>
+                <echo level="info">Building partition library</echo>
+
+                <var name="script.target" value="make.full"/>
+                <var name="schema.branch" value="n"/>
+                <var name="schema.path" value="../schema/partition"/>
+                <antcall target="make.script"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="script.workflow" depends="script.utility">
+        <if>
+            <equals arg1="${db.module.workflow}" arg2="y" />
+            <then>
+                <echo level="info">Building workflow library</echo>
+
+                <var name="script.target" value="make.full"/>
+                <var name="schema.branch" value="n"/>
+                <var name="schema.path" value="../schema/workflow"/>
+                <antcall target="make.script"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="script.common">
+        <if>
+            <equals arg1="${db.module.common}" arg2="y" />
+            <then>
+                <echo level="info">Building common elements</echo>
+
+                <var name="script.target" value="make.full"/>
+                <var name="schema.branch" value="n"/>
+                <var name="schema.path" value="../db/common"/>
+                <antcall target="make.script"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="script.common.update">
+        <if>
+            <equals arg1="${db.module.common}" arg2="y" />
+            <then>
+                <echo level="info">Updating common elements</echo>
+
+                <var name="script.target" value="script.exception"/>
+                <var name="schema.branch" value="n"/>
+                <var name="schema.path" value="../db/common"/>
+                <antcall target="make.script"/>
+            </then>
+        </if>
+    </target>
+    
+    <target name="make.full" depends="script.scd,script.partition,script.workflow">
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="transaction-full.sql"/>
+        </concat>
+
+        <antcall target="script.common"/>
+
+        <var name="script.target" value="make.full"/>
+        <var name="schema.branch" value="n"/>
+        <var name="schema.path" value="${db.path}"/>
+        <antcall target="make.script"/>
+
+        <antcall target="script.post"/>
+        
+        <if>
+            <equals arg1="${build.update}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="update-output.sql"/>
+                </concat>
+            </then>
+        </if>
+
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="release-set.sql"/>
+        </concat>
+        
+        <antcall target="script.final"/>
+    </target>
+    
+    <target name="make.update" depends="script.build-schema">
+        <if>
+            <equals arg1="${build.validate}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="release-check.sql"/>
+                </concat>
+            </then>
+        </if>
+
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="transaction-update.sql"/>
+        </concat>
+
+        <if>
+            <not><equals arg1="${build.branch}" arg2=""/></not>
+            <then>
+                <var name="script.target" value="make.update"/>
+                <var name="schema.branch" value="y"/>
+                <var name="schema.path" value="tmp/${db.instance_name}_${build.branch}/db/${build.config}"/>
+                <antcall target="make.script"/>
+            </then>
+        </if>
+        
+        <var name="script.target" value="make.update"/>
+        <var name="schema.branch" value="n"/>
+        <var name="schema.path" value="${db.path}"/>
+        <antcall target="make.script"/>
+        
+        <antcall target="script.common.update"/>
+
+        <if>
+            <equals arg1="${build.validate}" arg2="y" />
+            <then>
+                <echo level="info">Pulling update info from: ${output.update}</echo>
+
+                <concat dest="${output.file}" fixlastline="yes" append="yes">/***********************************************************************************************************************************
+Full Build Catalog and Exceptions
+***********************************************************************************************************************************/
+</concat>
+
+                <concat dest="${output.file}" fixlastline="no" append="yes">
+                    <fileset file="${output.update}"/>
+                </concat>
+            </then>
+        </if>
+
+        <antcall target="script.post"/>
+        
+        <if>
+            <equals arg1="${build.validate}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="update-check.sql"/>
+                </concat>
+            </then>
+        </if>
+            
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="release-set.sql"/>
+        </concat>
+        
+        <antcall target="script.final"/>
+    </target>
+
+    <target name="script.post">
+        <echo level="info">Looking for file post at: script/post.sql</echo>
+
+        <if>
+            <equals arg1="${build.validate}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="post.sql"/>
+                </concat>
+            </then>
+        </if>
+
+        <if>
+            <equals arg1="${build.doc}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="doc.sql"/>
+                </concat>
+            </then>
+        </if>
+    </target>
+
+    <target name="script.final">
+        <if>
+            <equals arg1="${build.test}" arg2="y" />
+            <then>
+                <concat dest="${output.file}" fixlastline="yes" append="yes">
+                    <fileset dir="script" includes="test-drop.sql"/>
+                </concat>
+            </then>
+        </if>
+
+        <concat dest="${output.file}" fixlastline="yes" append="yes">
+            <fileset dir="script" includes="complete.sql"/>
+        </concat>
+
+        <if>
+            <equals arg1="${build.commit}" arg2="n" />
+            <then>
+                <replace file="${output.file}" token="@build.commit@" value="rollback"/>
+            </then>
+            <else>
+                <replace file="${output.file}" token="@build.commit@" value="commit"/>
+            </else>
+        </if>
+        
+        <if>
+            <equals arg1="${build.clean}" arg2="y" />
+            <then>
+                <replace file="${output.file}" token="@build.allow_connect@" value="false"/>
+            </then>
+            <else>
+                <replace file="${output.file}" token="@build.allow_connect@" value="true"/>
+            </else>
+        </if>
+        
+        <if>
+            <equals arg1="${build.quick}" arg2="y" />
+            <then>
+                <replace file="${output.file}" token="@build.quick@" value="true"/>
+            </then>
+            <else>
+                <replace file="${output.file}" token="@build.quick@" value="false"/>
+            </else>
+        </if>
+        
+        <if>
+            <equals arg1="${build.debug}" arg2="y" />
+            <then>
+                <replace file="${output.file}" token="@build.debug@" value="true"/>
+            </then>
+            <else>
+                <replace file="${output.file}" token="@build.debug@" value="false"/>
+            </else>
+        </if>
+    </target>
+</project>
